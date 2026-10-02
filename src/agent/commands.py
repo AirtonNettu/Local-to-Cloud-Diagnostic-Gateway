@@ -60,6 +60,7 @@ __all__ = [
     "cmd_queue_requeue",
     "cmd_demo",
     "cmd_run",
+    "cmd_menu",
 ]
 
 _NOT_IMPLEMENTED_EXIT = 1
@@ -771,3 +772,82 @@ def _worse_exit(current: int, candidate: int) -> int:
     """Apply the run exit precedence 1 > 3 > 0 (review NIT8)."""
     order = {_EXIT_ERROR: 2, _EXIT_SYNC_INCOMPLETE: 1, _EXIT_OK: 0}
     return current if order.get(current, 0) >= order.get(candidate, 0) else candidate
+
+
+# Ordered menu table: a single source of truth so the printed numbers and the
+# dispatch can never drift apart. Numbers are the 1-based index; 0 is Exit.
+# Handlers are referenced by name and resolved from this module at dispatch
+# time so the table always tracks the current handler (and tests can spy on a
+# handler via ``monkeypatch.setattr(commands, ...)``).
+_MENU_ENTRIES: tuple[tuple[str, str], ...] = (
+    ("Scan", "cmd_scan"),
+    ("Health", "cmd_health"),
+    ("Hardware", "cmd_hardware"),
+    ("Network", "cmd_network"),
+    ("Status", "cmd_status"),
+    ("Queue (stats)", "cmd_queue_stats"),
+    ("Sync (one cycle)", "cmd_sync"),
+    ("Demo (all scenarios)", "cmd_demo"),
+)
+
+
+def _menu_namespace(base: argparse.Namespace) -> argparse.Namespace:
+    """Build a per-selection namespace carrying only the global options.
+
+    Preserves ``env_file`` (read by ``_load``) and ``log_level`` from the menu's
+    own ``args`` so ``--env-file`` on ``diagnostic-agent menu`` still applies.
+    Every per-command option is left at its handler default (handlers read them
+    via ``getattr`` with a default), so each action behaves like the bare
+    subcommand.
+    """
+    return argparse.Namespace(
+        command=getattr(base, "command", None),
+        log_level=getattr(base, "log_level", None),
+        env_file=getattr(base, "env_file", None),
+    )
+
+
+def _render_menu() -> str:
+    lines: list[str] = ["", "Diagnostic Gateway menu", "-----------------------"]
+    for index, (label, _handler) in enumerate(_MENU_ENTRIES, start=1):
+        lines.append(f"  {index}) {label}")
+    lines.append("  0) Exit")
+    return "\n".join(lines)
+
+
+def cmd_menu(args: argparse.Namespace) -> int:
+    """Interactive numbered menu: pick a number to run a command, 0 to exit.
+
+    Loops: render the menu, read a line, dispatch the choice to the existing
+    handler, then loop again. Option 0 (or EOF) exits with 0. A handler's
+    non-zero exit code is reported but does not abort the loop. Invalid input
+    re-prompts. ``KeyboardInterrupt`` at the prompt returns to the menu rather
+    than killing the session. Input is read through ``_input`` and output
+    through ``_print`` (``getattr`` seams) so tests can drive it without stdin.
+    """
+    input_fn: Callable[[str], str] = getattr(args, "_input", input)
+    print_fn: Callable[..., None] = getattr(args, "_print", print)
+
+    while True:
+        print_fn(_render_menu())
+        try:
+            raw = input_fn("Select an option: ")
+        except EOFError:
+            return _EXIT_OK
+        except KeyboardInterrupt:
+            print_fn("")
+            continue
+
+        choice = raw.strip()
+        if choice == "0":
+            return _EXIT_OK
+        if not choice.isdigit() or not (1 <= int(choice) <= len(_MENU_ENTRIES)):
+            print_fn(f"Invalid option: {raw!r}. Enter a number from the menu.")
+            continue
+
+        label, handler_name = _MENU_ENTRIES[int(choice) - 1]
+        handler: Callable[[argparse.Namespace], int] = globals()[handler_name]
+        print_fn(f"Running: {label}")
+        code = handler(_menu_namespace(args))
+        if code != _EXIT_OK:
+            print_fn(f"(exited with code {code})")
