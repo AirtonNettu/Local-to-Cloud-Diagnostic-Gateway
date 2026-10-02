@@ -150,6 +150,7 @@ diagnostic-agent status           # identity, config summary, queue counts
 diagnostic-agent queue stats      # queue counts per state
 diagnostic-agent demo --all       # six deterministic scenarios
 diagnostic-agent run              # scan + sync loop on the telemetry interval
+diagnostic-agent menu             # interactive numbered menu; runs a command then returns to the menu
 ```
 
 Copy `.env.example` to `.env` to configure cloud sync (both files are optional;

@@ -17,6 +17,7 @@ _COMMANDS = (
     "queue",
     "demo",
     "run",
+    "menu",
 )
 
 

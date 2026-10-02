@@ -131,6 +131,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.set_defaults(func=commands.cmd_run)
 
+    menu = subparsers.add_parser(
+        "menu",
+        help="Interactive numbered menu; pick a number to run a command, 0 to exit.",
+        description="Show a numbered menu, run the chosen command, then return to "
+        "the menu. Loops until you pick 0 (Exit).",
+    )
+    menu.set_defaults(func=commands.cmd_menu)
+
     return parser
 
 
