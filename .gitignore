@@ -1,0 +1,38 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Local data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# AWS SAM
+.aws-sam/
+
+# Build-process artifacts (internal workflow planning/design notes, not project source)
+.agents/
+
+# Personal one-click launchers (local convenience, not part of the product)
+/MENU.bat
+/Diagnostico.bat
+/atalhos/
