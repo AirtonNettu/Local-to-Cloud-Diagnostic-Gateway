@@ -1,0 +1,16 @@
+stateDiagram-v2
+    [*] --> PENDING: enqueue during scan
+    PENDING --> SYNCING: claim_due
+    FAILED --> SYNCING: claim_due (next_attempt_at <= now)
+    SYNCING --> SYNCED: accepted or duplicate
+    SYNCING --> FAILED: transient error (attempt < RETRY_LIMIT)
+    SYNCING --> DEAD_LETTER: rejected or attempt >= RETRY_LIMIT
+    SYNCING --> PENDING: release (offline / auth / config, attempt_count == 0)
+    SYNCING --> FAILED: release (offline / auth / config, attempt_count > 0)
+    DEAD_LETTER --> PENDING: queue requeue
+    SYNCED --> [*]
+
+    note right of PENDING
+        OFFLINE attempts are recorded
+        but never consume RETRY_LIMIT
+    end note

@@ -1,0 +1,23 @@
+flowchart TD
+    HW["Hardware / OS<br/>CPU, memory, disks, interfaces"]
+    COL["Collector<br/>typed dataclasses (facts)"]
+    ENG["Diagnostic engine<br/>checks, alerts, metrics"]
+    LDB[("Local database<br/>runs + results")]
+    SQ["Sync queue<br/>minimized, scrubbed event"]
+    TLS["HTTPS<br/>Bearer token, no redirects"]
+    GW["API Gateway<br/>route + throttle"]
+    LAM["Lambda<br/>auth + handler"]
+    VAL["Validation<br/>shared schema contract"]
+    DDB[("DynamoDB<br/>idempotent item per event_id")]
+    CW["CloudWatch<br/>JSON logs + EMF metrics"]
+
+    HW -->|raw readings| COL
+    COL -->|facts dict| ENG
+    ENG -->|DiagnosticResult| LDB
+    LDB -->|frozen payload| SQ
+    SQ -->|JSON batch| TLS
+    TLS --> GW
+    GW -->|v2 event| LAM
+    LAM --> VAL
+    VAL -->|accepted| DDB
+    LAM -->|events + metrics| CW

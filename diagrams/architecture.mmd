@@ -1,0 +1,45 @@
+flowchart LR
+    subgraph Local["Local trust domain (Windows host)"]
+        CLI["diagnostic-agent CLI<br/>argparse"]
+        PIPE["DiagnosticPipeline<br/>collect -> diagnose -> evaluate"]
+        COLL["Collectors<br/>cpu / memory / storage / system / network / hardware"]
+        PLAT["platform_support<br/>PowerShell CIM (read-only)"]
+        DIAG["Diagnostics<br/>probes / rules / health"]
+        DB[("SQLite<br/>WAL, local-first")]
+        QUEUE["SyncQueue<br/>PENDING..DEAD_LETTER"]
+        SYNC["SyncService + ApiClient<br/>UrllibTransport (no redirects)"]
+    end
+
+    subgraph AWS["AWS serverless backend"]
+        APIGW["HTTP API Gateway<br/>TLS 1.2+, throttling, access log"]
+        LH["Lambda: health"]
+        LD["Lambda: device"]
+        LT["Lambda: telemetry"]
+        LQ["Lambda: diagnostic"]
+        DDB[("DynamoDB<br/>single table + GSI1")]
+        SSM["SSM Parameter Store<br/>SecureString keys"]
+        CW["CloudWatch<br/>logs + EMF metrics"]
+    end
+
+    CLI --> PIPE
+    PIPE --> COLL
+    COLL --> PLAT
+    PIPE --> DIAG
+    PIPE --> DB
+    DB --> QUEUE
+    QUEUE --> SYNC
+    SYNC -->|HTTPS Bearer| APIGW
+    APIGW --> LD
+    APIGW --> LT
+    APIGW --> LQ
+    APIGW --> LH
+    LD --> DDB
+    LT --> DDB
+    LQ --> DDB
+    LD --> SSM
+    LT --> SSM
+    LQ --> SSM
+    LD --> CW
+    LT --> CW
+    LQ --> CW
+    LH --> CW
