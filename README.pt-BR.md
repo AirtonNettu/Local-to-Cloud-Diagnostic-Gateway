@@ -154,6 +154,7 @@ diagnostic-agent status           # identidade, resumo de config, contagens da f
 diagnostic-agent queue stats      # contagens da fila por estado
 diagnostic-agent demo --all       # seis cenários determinísticos
 diagnostic-agent run              # laço de scan + sync no intervalo de telemetria
+diagnostic-agent menu             # menu numérico interativo; roda um comando e volta ao menu
 ```
 
 Copie `.env.example` para `.env` para configurar a sincronização com a nuvem
