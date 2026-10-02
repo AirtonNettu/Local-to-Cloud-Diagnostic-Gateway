@@ -1,0 +1,6 @@
+
+Disparando 192.0.2.1 com 32 bytes de dados:
+Esgotado o tempo limite do pedido.
+
+Estatisticas do Ping para 192.0.2.1:
+    Pacotes: Enviados = 1, Recebidos = 0, Perdidos = 1 (100% de perda),

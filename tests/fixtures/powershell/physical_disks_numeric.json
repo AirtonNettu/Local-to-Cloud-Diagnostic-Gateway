@@ -1,0 +1,18 @@
+[
+  {
+    "FriendlyName": "NEUTRAL-DISK-A",
+    "MediaType": 4,
+    "BusType": 11,
+    "HealthStatus": 0,
+    "OperationalStatus": [2],
+    "Size": 240054796288
+  },
+  {
+    "FriendlyName": "NEUTRAL-DISK-B",
+    "MediaType": 4,
+    "BusType": 17,
+    "HealthStatus": 1,
+    "OperationalStatus": [3],
+    "Size": 512110190592
+  }
+]

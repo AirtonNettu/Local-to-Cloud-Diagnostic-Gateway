@@ -1,0 +1,6 @@
+
+Pinging 192.0.2.1 with 32 bytes of data:
+Reply from 10.0.0.253: Destination host unreachable.
+
+Ping statistics for 192.0.2.1:
+    Packets: Sent = 1, Received = 1, Lost = 0 (0% loss),

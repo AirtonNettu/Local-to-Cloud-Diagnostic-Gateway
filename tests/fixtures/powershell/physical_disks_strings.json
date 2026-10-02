@@ -1,0 +1,18 @@
+[
+  {
+    "FriendlyName": "NEUTRAL-DISK-A",
+    "MediaType": "SSD",
+    "BusType": "SATA",
+    "HealthStatus": "Healthy",
+    "OperationalStatus": "OK",
+    "Size": 240054796288
+  },
+  {
+    "FriendlyName": "NEUTRAL-DISK-B",
+    "MediaType": "SSD",
+    "BusType": "NVMe",
+    "HealthStatus": "Warning",
+    "OperationalStatus": "Degraded",
+    "Size": 512110190592
+  }
+]

@@ -1,0 +1,8 @@
+
+Disparando 2606:4700:4700::1111 com 32 bytes de dados:
+Resposta de 2001:db8::abcd: Host de destino inacessivel.
+
+Estatisticas do Ping para 2606:4700:4700::1111:
+    Pacotes: Enviados = 1, Recebidos = 1, Perdidos = 0 (0% de perda),
+Aproximar um numero redondo de vezes em milissegundos:
+    Minimo = 0ms, Maximo = 0ms, Media = 0ms
