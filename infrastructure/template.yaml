@@ -1,0 +1,410 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Local-to-Cloud Diagnostic Gateway serverless backend: HTTP API -> four Lambda
+  functions -> single-table DynamoDB. Least-privilege IAM (one explicit role per
+  function, no managed policies, no wildcard actions). Validated offline with
+  cfn-lint; never deployed from this repository.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Deployment stage; drives default SSM parameter names.
+  IngestKeyParameterName:
+    Type: String
+    Default: /diagnostic-gateway/dev/ingest-api-key
+    AllowedPattern: ^/[A-Za-z0-9/_.-]{1,1000}$
+    Description: >
+      SSM SecureString name for the ingest API key. Must start with '/' so the
+      derived ARN (parameter + name) is well-formed.
+  ReadKeyParameterName:
+    Type: String
+    Default: /diagnostic-gateway/dev/read-api-key
+    AllowedPattern: ^/[A-Za-z0-9/_.-]{1,1000}$
+    Description: SSM SecureString name for the read API key.
+  DiagnosticRetentionDays:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    MaxValue: 365
+    Description: Days a diagnostic event is retained before DynamoDB TTL expiry.
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+    AllowedValues:
+      - 1
+      - 3
+      - 5
+      - 7
+      - 14
+      - 30
+      - 60
+      - 90
+      - 120
+      - 150
+      - 180
+      - 365
+      - 400
+      - 545
+      - 731
+      - 1096
+      - 1827
+      - 2192
+      - 2557
+      - 2922
+      - 3288
+      - 3653
+    Description: CloudWatch Logs retention (one of the allowed CloudWatch values).
+  ThrottleRateLimit:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    Description: Steady-state request rate limit for the HTTP API default route.
+  ThrottleBurstLimit:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    Description: Burst request limit for the HTTP API default route.
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Architectures:
+      - arm64
+    MemorySize: 128
+    Timeout: 10
+    CodeUri: ../src
+    Environment:
+      Variables:
+        LOG_LEVEL: INFO
+        SERVICE_VERSION: 0.1.0
+
+Resources:
+  # --- HTTP API ------------------------------------------------------------
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      DefaultRouteSettings:
+        ThrottlingRateLimit: !Ref ThrottleRateLimit
+        ThrottlingBurstLimit: !Ref ThrottleBurstLimit
+      AccessLogSettings:
+        DestinationArn: !GetAtt AccessLogGroup.Arn
+        Format: >-
+          {"requestId":"$context.requestId","sourceIp":"$context.identity.sourceIp","routeKey":"$context.routeKey","status":"$context.status","latency":"$context.responseLatency","responseLength":"$context.responseLength"}
+
+  AccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/http-api/${AWS::StackName}-access
+      RetentionInDays: !Ref LogRetentionDays
+
+  # --- DynamoDB single table ----------------------------------------------
+  DiagnosticsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      TableName: !Sub ${AWS::StackName}-diagnostics
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  # --- Functions -----------------------------------------------------------
+  HealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-health
+      Handler: cloud.handlers.health.handler
+      Role: !GetAtt HealthRole.Arn
+      Events:
+        Health:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /health
+
+  DeviceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-device
+      Handler: cloud.handlers.device.handler
+      Role: !GetAtt DeviceRole.Arn
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DiagnosticsTable
+          INGEST_KEY_PARAMETER: !Ref IngestKeyParameterName
+          READ_KEY_PARAMETER: !Ref ReadKeyParameterName
+      Events:
+        RegisterDevice:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /v1/devices
+        ListDevices:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /v1/devices
+        GetDevice:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /v1/devices/{device_id}
+
+  TelemetryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-telemetry
+      Handler: cloud.handlers.telemetry.handler
+      Role: !GetAtt TelemetryRole.Arn
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DiagnosticsTable
+          INGEST_KEY_PARAMETER: !Ref IngestKeyParameterName
+          READ_KEY_PARAMETER: !Ref ReadKeyParameterName
+          DIAGNOSTIC_RETENTION_DAYS: !Ref DiagnosticRetentionDays
+      Events:
+        Telemetry:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /v1/telemetry
+
+  DiagnosticFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-diagnostic
+      Handler: cloud.handlers.diagnostic.handler
+      Role: !GetAtt DiagnosticRole.Arn
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref DiagnosticsTable
+          INGEST_KEY_PARAMETER: !Ref IngestKeyParameterName
+          READ_KEY_PARAMETER: !Ref ReadKeyParameterName
+      Events:
+        ListDiagnostics:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /v1/devices/{device_id}/diagnostics
+
+  # --- Per-function log groups --------------------------------------------
+  HealthLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-health
+      RetentionInDays: !Ref LogRetentionDays
+
+  DeviceLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-device
+      RetentionInDays: !Ref LogRetentionDays
+
+  TelemetryLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-telemetry
+      RetentionInDays: !Ref LogRetentionDays
+
+  DiagnosticLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-diagnostic
+      RetentionInDays: !Ref LogRetentionDays
+
+  # --- IAM roles (one per function, no managed policies, no wildcards) -----
+  HealthRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-health:*
+
+  DeviceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-device:*
+        - PolicyName: data
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:UpdateItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt DiagnosticsTable.Arn
+                  - !Sub ${DiagnosticsTable.Arn}/index/GSI1
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${IngestKeyParameterName}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ReadKeyParameterName}
+
+  TelemetryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-telemetry:*
+        - PolicyName: data
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource:
+                  - !GetAtt DiagnosticsTable.Arn
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${IngestKeyParameterName}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ReadKeyParameterName}
+
+  DiagnosticRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: logs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-diagnostic:*
+        - PolicyName: data
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt DiagnosticsTable.Arn
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${IngestKeyParameterName}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ReadKeyParameterName}
+
+Outputs:
+  ApiBaseUrl:
+    Description: Base URL of the deployed HTTP API.
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${Stage}
+  TableName:
+    Description: Name of the DynamoDB table.
+    Value: !Ref DiagnosticsTable
+  IngestKeyParameterName:
+    Description: SSM parameter name holding the ingest API key.
+    Value: !Ref IngestKeyParameterName

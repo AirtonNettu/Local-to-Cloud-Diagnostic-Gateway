@@ -1,0 +1,22 @@
+# SAM CLI configuration (used only when deploying from a machine with the SAM
+# CLI installed; this repository never deploys). Values are safe defaults; the
+# deploy scripts pass --parameter-overrides explicitly.
+version = 0.1
+
+[default.global.parameters]
+stack_name = "diagnostic-gateway-dev"
+
+[default.build.parameters]
+template = "infrastructure/template.yaml"
+
+[default.validate.parameters]
+template = "infrastructure/template.yaml"
+lint = true
+
+[default.deploy.parameters]
+stack_name = "diagnostic-gateway-dev"
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+confirm_changeset = true
+fail_on_empty_changeset = false
+parameter_overrides = "Stage=dev"
