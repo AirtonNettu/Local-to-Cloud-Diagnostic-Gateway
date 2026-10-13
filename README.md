@@ -156,6 +156,12 @@ diagnostic-agent menu             # interactive numbered menu; runs a command th
 Copy `.env.example` to `.env` to configure cloud sync (both files are optional;
 with no `.env` the agent runs fully local and sync is disabled).
 
+## Web Dashboard
+
+A reactive web observatory for device fleet visualization and diagnostic inspection:
+- **Live deployment:** [https://local-to-cloud-diagnostic-gateway.pages.dev/](https://local-to-cloud-diagnostic-gateway.pages.dev/)
+- **Local run:** double-click `MENU.bat` (option 9) or execute `npm run dev` in `dashboard/`.
+
 ## AWS deployment
 
 Infrastructure is AWS SAM (`infrastructure/template.yaml`) and ships with

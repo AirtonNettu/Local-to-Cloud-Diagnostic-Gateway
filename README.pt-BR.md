@@ -161,6 +161,12 @@ Copie `.env.example` para `.env` para configurar a sincronização com a nuvem
 (ambos os arquivos são opcionais; sem `.env` o agente roda totalmente local e a
 sincronização fica desativada).
 
+## Dashboard Web
+
+Um observatório web reativo para visualização da frota de dispositivos e diagnósticos detalhados:
+- **Painel online:** [https://local-to-cloud-diagnostic-gateway.pages.dev/](https://local-to-cloud-diagnostic-gateway.pages.dev/)
+- **Execução local:** dê dois cliques em `MENU.bat` (opção 9) ou execute `npm run dev` na pasta `dashboard/`.
+
 ## Implantação na AWS
 
 A infraestrutura é AWS SAM (`infrastructure/template.yaml`) e acompanha
