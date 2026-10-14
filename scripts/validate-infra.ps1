@@ -10,14 +10,8 @@ $template = Join-Path $repoRoot "infrastructure/template.yaml"
 $python = Join-Path $repoRoot ".venv/Scripts/python.exe"
 
 Write-Host "Running cfn-lint on $template"
-# cfn-lint 1.x ships a console script but no `python -m cfnlint`; prefer the
-# venv console script and fall back to a bare cfn-lint on PATH.
-$cfnLint = Join-Path $repoRoot ".venv/Scripts/cfn-lint.exe"
-if (Test-Path $cfnLint) {
-    & $cfnLint $template
-} else {
-    & cfn-lint $template
-}
+$templateArg = $template -replace '\\', '/'
+& $python -c "import sys, cfnlint.runner; sys.argv=['cfn-lint', '$templateArg']; cfnlint.runner.main()"
 if ($LASTEXITCODE -ne 0) {
     throw "cfn-lint reported findings."
 }
